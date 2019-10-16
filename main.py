@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import pickle
+import time
 
 import numpy as np
 import torch
@@ -73,6 +74,8 @@ def train(model, train_data, val_data):
     val_eval_freq = int(0.1 * num_iterations_per_epoch)
     print(f"Val set evaluated every {val_eval_freq:,} steps (approx. 0.1 epoch)")
 
+    initial_time = time.time()
+
     global_step = 0
     for i in range(num_epoch):
         print(f"EPOCH {i+1}")
@@ -91,7 +94,8 @@ def train(model, train_data, val_data):
             global_step += 1
             if global_step % val_eval_freq == 0:
                 val_loss, val_acc = evaluate(model, val_data, criterion)
-                print(f"VAL LOSS: {val_loss:.4} VAL ACC: {val_acc:.4}")
+                end_time = time.time()
+                print(f"STEP: {global_step:7} | TIME: {int((end_time - initial_time)/60):4}min | VAL LOSS: {val_loss:.4f} | VAL ACC: {val_acc:.4f}")
                 model.train()
 
 
