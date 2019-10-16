@@ -3,7 +3,7 @@ import numpy as np
 import random
 
 
-def get_batch(self, data, batch_size, encoder_size, context_size, encoderR_size, is_test, start_index=0, target_index=1):
+def get_batch(data, batch_size, encoder_size, context_size, encoderR_size, is_test, start_index=0, target_index=1, pad_index=0):
     """ inputs: 
             data: 
             batch_size : 
@@ -51,13 +51,13 @@ def get_batch(self, data, batch_size, encoder_size, context_size, encoderR_size,
         tmp_encoder_seq = []
         
         for en_input in list_encoder_input:
-            encoder_pad = [self.pad_index] * (encoder_size - len( en_input ))
+            encoder_pad = [pad_index] * (encoder_size - len( en_input ))
             tmp_encoder_inputs.append( (en_input + encoder_pad)[:encoder_size] )        
             tmp_encoder_seq.append( min( len( en_input ), encoder_size ) )    
         
         # add pad
         for i in range( context_size - list_len ):
-            encoder_pad = [self.pad_index] * (encoder_size)
+            encoder_pad = [pad_index] * (encoder_size)
             tmp_encoder_inputs.append( encoder_pad )
             tmp_encoder_seq.append( 0 ) 
 
@@ -72,7 +72,7 @@ def get_batch(self, data, batch_size, encoder_size, context_size, encoderR_size,
         
         
         # encoderR inputs are padded
-        encoderR_pad = [self.pad_index] * (encoderR_size - encoderR_length)
+        encoderR_pad = [pad_index] * (encoderR_size - encoderR_length)
         encoderR_inputs.append( (encoderR_input.tolist() + encoderR_pad)[:encoderR_size])
 
         encoderR_seq.append( min(encoderR_length, encoderR_size) )
