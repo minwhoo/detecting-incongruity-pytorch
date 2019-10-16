@@ -4,7 +4,8 @@ import random
 
 
 def get_batch(data, batch_size, encoder_size, context_size, encoderR_size, is_test, start_index=0, target_index=1, pad_index=0):
-    """ inputs: 
+    """Get batch of data from processed dataset.
+    inputs: 
             data: 
             batch_size : 
             encoder_size : max encoder time step

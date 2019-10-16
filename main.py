@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import dataloader
+import data
 from model import AttnHrDualEncoderModel
 
 DATA_DIR = Path(os.environ.get('DATA_DIR'))
@@ -25,7 +25,7 @@ def iter_batch(dataset, batch_size, is_test=False):
     encoderR_size = 25
     for i in range(0, len(dataset), batch_size):
         # Call batch generator
-        batch = dataloader.get_batch(dataset, batch_size, encoder_size, context_size, encoderR_size, start_index=i, is_test=is_test)
+        batch = data.get_batch(dataset, batch_size, encoder_size, context_size, encoderR_size, start_index=i, is_test=is_test)
         raw_encoder_inputs, raw_encoderR_inputs, raw_encoder_seq, raw_context_seq, raw_encoderR_seq, raw_target_label = batch
 
         # Convert data to torch tensors
