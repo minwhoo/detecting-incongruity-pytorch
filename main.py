@@ -109,6 +109,7 @@ def train(model, train_data, val_data):
             loss = criterion(preds, labels)
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
             
             global_step += 1
