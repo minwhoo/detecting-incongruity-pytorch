@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from sklearn.metrics import roc_auc_score
 
 import data
 from model import AttnHrDualEncoderModel
@@ -46,10 +47,11 @@ def evaluate(model, data):
         criterion = nn.BCEWithLogitsLoss()
 
         batch_size = 64
-        num_correct = 0
-        num_total = 0
-        loss_sum = 0
         val_dataloader = DataLoader(data, batch_size=batch_size)
+
+        loss_sum = 0
+        preds_all = []
+        labels_all = []
         for batch in val_dataloader:
             headlines, headline_lengths, bodys, para_lengths, labels = tuple(b.to(device) for b in batch)
 
@@ -57,13 +59,21 @@ def evaluate(model, data):
 
             loss = criterion(preds, labels)
             loss_sum += len(labels) * loss
-            num_correct += torch.eq((preds > 0).int(), labels.int()).sum().item()
-            num_total += len(labels)
+
+            preds_all.append(preds)
+            labels_all.append(labels)
+
+        preds_all = torch.cat(preds_all)
+        labels_all = torch.cat(labels_all)
+
+        num_correct = torch.eq((preds_all > 0).int(), labels_all.int()).sum().item()
+        num_total = len(preds_all)
 
         loss = loss_sum / num_total
         acc = num_correct / num_total
+        auc = roc_auc_score(labels_all.tolist(), preds_all.tolist())
 
-        return loss, acc
+        return loss, acc, auc
 
 
 def train(model, train_data, val_data):
@@ -88,7 +98,7 @@ def train(model, train_data, val_data):
     global_step = 0
     epoch_no = 0
     while True:
-        print(f"EPOCH {epoch_no+1}")
+        print(f"EPOCH #{epoch_no+1}")
 
         # Train single epoch
         for batch in train_dataloader:
@@ -104,9 +114,12 @@ def train(model, train_data, val_data):
             global_step += 1
 
             if global_step % val_eval_freq == 0:
-                val_loss, val_acc = evaluate(model, val_data)
+                val_loss, val_acc, val_auc = evaluate(model, val_data)
                 end_time = time.time()
-                print(f"STEP: {global_step:7} | TIME: {int((end_time - initial_time)/60):4}min | VAL LOSS: {val_loss:.4f} | VAL ACC: {val_acc:.4f}")
+                minutes_elapsed = int((end_time - initial_time)/60)
+                print("STEP: {:7} | TIME: {:4}min | VAL LOSS: {:.4f} | VAL ACC: {:.4f} | VAL AUROC: {:.4f}".format(
+                    global_step, minutes_elapsed, val_loss, val_acc, val_auc
+                ))
                 model.train()
                 es.record_loss(val_loss, model)
                 if es.should_stop():
@@ -166,9 +179,9 @@ def main():
             model.load_state_dict(torch.load(utils.CHECKPOINT_SAVE_PATH))
             print(f"Loading done!")
 
-        test_loss, test_acc = evaluate(model, test_dataset)
+        _, test_acc, test_auc = evaluate(model, test_dataset)
 
-        print(f"TEST LOSS: {test_loss:.4f} | TEST ACC: {test_acc:.4f}")
+        print(f"TEST ACC: {test_acc:.4f} | TEST AUROC: {test_auc:.4f}")
 
         if utils.CHECKPOINT_SAVE_PATH.exists():
             utils.CHECKPOINT_SAVE_PATH.unlink()  # delete model
