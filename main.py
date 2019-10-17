@@ -39,9 +39,11 @@ def iter_batch(dataset, batch_size, is_test=False):
         yield (input_headline, input_body), labels
 
 
-def evaluate(model, data, criterion):
+def evaluate(model, data):
     with torch.no_grad():
         model.eval()
+
+        criterion = nn.BCEWithLogitsLoss()
 
         batch_size = 64
         num_correct = 0
@@ -102,7 +104,7 @@ def train(model, train_data, val_data):
             global_step += 1
 
             if global_step % val_eval_freq == 0:
-                val_loss, val_acc = evaluate(model, val_data, criterion)
+                val_loss, val_acc = evaluate(model, val_data)
                 end_time = time.time()
                 print(f"STEP: {global_step:7} | TIME: {int((end_time - initial_time)/60):4}min | VAL LOSS: {val_loss:.4f} | VAL ACC: {val_acc:.4f}")
                 model.train()
@@ -148,6 +150,28 @@ def main():
 
     # Train
     train(model, train_dataset, val_dataset)
+
+    # Evaluate test
+    evaluate_test_after_train = True
+    if evaluate_test_after_train:
+        print("Loading test set...")
+        with open(PROCESSED_DATA_DIR / 'test_set.pkl', 'rb') as f:
+            test_data = pickle.load(f, encoding='latin1')
+            print(f"Test set size: {len(test_data):9,}")
+            test_dataset = data.load_dataset(test_data, max_headline_len, max_para_len, max_num_para)
+        print("Loading done!")
+
+        if utils.CHECKPOINT_SAVE_PATH.exists():
+            print(f"Loading model checkpoint with min val loss...")
+            model.load_state_dict(torch.load(utils.CHECKPOINT_SAVE_PATH))
+            print(f"Loading done!")
+
+        test_loss, test_acc = evaluate(model, test_dataset)
+
+        print(f"TEST LOSS: {test_loss:.4f} | TEST ACC: {test_acc:.4f}")
+
+        if utils.CHECKPOINT_SAVE_PATH.exists():
+            utils.CHECKPOINT_SAVE_PATH.unlink()  # delete model
 
 
 if __name__ == "__main__":
