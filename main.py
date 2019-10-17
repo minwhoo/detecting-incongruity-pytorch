@@ -8,6 +8,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 
 import data
 from model import AttnHrDualEncoderModel
@@ -45,14 +46,15 @@ def evaluate(model, data, criterion):
         num_correct = 0
         num_total = 0
         loss_sum = 0
-        for inputs, labels in iter_batch(data, batch_size, is_test=True):
-            inputs, labels = tuple(x.to(device) for x in inputs), labels.to(device)
+        val_dataloader = DataLoader(data, batch_size=batch_size)
+        for batch in val_dataloader:
+            headlines, headline_lengths, bodys, para_lengths, labels = tuple(b.to(device) for b in batch)
 
-            preds = model(inputs)
+            preds = model(headlines, headline_lengths, bodys, para_lengths)
 
             loss = criterion(preds, labels)
             loss_sum += len(labels) * loss
-            num_correct += torch.eq(torch.round(preds), labels).sum().item()
+            num_correct += torch.eq((preds > 0).int(), labels.int()).sum().item()
             num_total += len(labels)
 
         loss = loss_sum / num_total
@@ -63,6 +65,7 @@ def evaluate(model, data, criterion):
 
 def train(model, train_data, val_data):
     num_epoch = 10
+    num_iterations = 100000
     batch_size = 64
 
     optimizer = torch.optim.Adam(model.parameters())
@@ -76,27 +79,35 @@ def train(model, train_data, val_data):
 
     initial_time = time.time()
 
+    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+
     global_step = 0
-    for i in range(num_epoch):
-        print(f"EPOCH {i+1}")
+    epoch_no = 0
+    while True:
+        print(f"EPOCH {epoch_no+1}")
 
         # Train single epoch
-        for inputs, labels in iter_batch(train_data, batch_size):
-            inputs, labels = tuple(x.to(device) for x in inputs), labels.to(device)
+        for batch in train_dataloader:
+            headlines, headline_lengths, bodys, para_lengths, labels = tuple(b.to(device) for b in batch)
             optimizer.zero_grad()
 
-            preds = model(inputs)
+            preds = model(headlines, headline_lengths, bodys, para_lengths)
             loss = criterion(preds, labels)
 
             loss.backward()
             optimizer.step()
             
             global_step += 1
+
             if global_step % val_eval_freq == 0:
                 val_loss, val_acc = evaluate(model, val_data, criterion)
                 end_time = time.time()
                 print(f"STEP: {global_step:7} | TIME: {int((end_time - initial_time)/60):4}min | VAL LOSS: {val_loss:.4f} | VAL ACC: {val_acc:.4f}")
                 model.train()
+            
+            if global_step == num_iterations:
+                return
+        epoch_no += 1
 
 
 def main():
@@ -104,12 +115,18 @@ def main():
 
     # Load data
     print("Loading processed data...")
+    max_headline_len = 25
+    max_para_len = 200
+    max_num_para = 50
+
     with open(PROCESSED_DATA_DIR / 'train_set.pkl', 'rb') as f:
-        train_set = pickle.load(f, encoding='latin1')
-        print(f"Train set size: {len(train_set):9,}")
+        train_data = pickle.load(f, encoding='latin1')
+        print(f"Train set size: {len(train_data):9,}")
+        train_dataset = data.load_dataset(train_data, max_headline_len, max_para_len, max_num_para)
     with open(PROCESSED_DATA_DIR / 'valid_set.pkl', 'rb') as f:
-        valid_set = pickle.load(f, encoding='latin1')
-        print(f"Valid set size: {len(valid_set):9,}")
+        val_data = pickle.load(f, encoding='latin1')
+        print(f"Valid set size: {len(val_data):9,}")
+        val_dataset = data.load_dataset(val_data, max_headline_len, max_para_len, max_num_para)
     print("Loading done!")
 
     # Initialize model
@@ -123,7 +140,7 @@ def main():
     print("Initialization done!")
 
     # Train
-    train(model, train_set, valid_set)
+    train(model, train_dataset, val_dataset)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,58 @@
 # -*- coding: utf-8 -*-
+from typing import List
+
 import numpy as np
 import random
+import torch
+from torch.utils.data import TensorDataset
+import torch.nn.functional as F
+
+
+def create_padded_tensor(input_tensor, seq_length, dtype, value=0):
+    output = torch.tensor(input_tensor[:seq_length], dtype=dtype)
+    pad_len = seq_length - len(output)
+    return F.pad(output, (0, pad_len), value=value)
+
+
+def load_dataset(data, max_headline_len, max_para_len, max_num_para):
+    samples = []
+    headline_tensors = []
+    headline_lengths = []
+    body_tensors = []
+    para_length_tensors = []
+    labels = []
+    count_no_body = 0
+    for d in data:
+        # headline
+        headline_tensor = create_padded_tensor(d[0], max_headline_len, dtype=torch.long)
+        headline_tensors.append(headline_tensor)
+
+        headline_lengths.append(min(len(np.nonzero(d[0])[0]), max_headline_len))
+
+        # body
+        if len(d[1]) == 0:
+            count_no_body += 1
+            headline_tensors.pop()
+            headline_lengths.pop()
+            continue
+
+        paragraphs = d[1][:max_num_para]
+        empty_paragraphs = [[]] * (max_num_para - len(paragraphs))
+        para_tensors = []
+        for para in paragraphs + empty_paragraphs:
+            para_tensor = create_padded_tensor(para, max_para_len, dtype=torch.long)
+            para_tensors.append(para_tensor)
+        body_tensor = torch.stack(para_tensors, dim=0)
+        body_tensors.append(body_tensor)
+
+        para_length_tensor = create_padded_tensor([len(p[:max_para_len]) for p in paragraphs], max_num_para, dtype=torch.int)
+        para_length_tensors.append(para_length_tensor)
+
+        # label
+        labels.append(int(d[2]))
+    print(count_no_body)
+
+    return TensorDataset(torch.stack(headline_tensors), torch.tensor(headline_lengths, dtype=torch.int), torch.stack(body_tensors), torch.stack(para_length_tensors), torch.tensor(labels, dtype=torch.float))
 
 
 def get_batch(data, batch_size, encoder_size, context_size, encoderR_size, is_test, start_index=0, target_index=1, pad_index=0):
