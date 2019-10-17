@@ -2,6 +2,25 @@
 
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence, pad_packed_sequence
+
+
+class ParaHeadlineAttention(nn.Module):
+    def __init__(self, para_dim, headline_dim, hidden_dim):
+        super().__init__()
+        self.linear_para = nn.Linear(para_dim, hidden_dim, bias=False)
+        self.linear_headline = nn.Linear(headline_dim, hidden_dim, bias=False)
+        self.v = nn.Parameter(torch.rand(hidden_dim))  # [H_hidden]
+
+    def forward(self, paras, para_mask, headline):
+        # paras: [N, P, H_para]
+        # para_mask: [N, P]
+        # headline: [N, H_headline]
+        z = self.linear_para(paras) + self.linear_headline(headline).unsqueeze(1)  # [N, P, H_hidden]
+        s = torch.tanh(z).matmul(self.v)  # [N, P]
+        s[para_mask] = float('-inf')
+        a = torch.softmax(s, dim=1)  # [N, P]
+        return torch.matmul(a.unsqueeze(1), paras).squeeze()  # paras: [N, H_para]
 
 
 class AttnHrDualEncoderModel(nn.Module):
@@ -16,30 +35,44 @@ class AttnHrDualEncoderModel(nn.Module):
         self.headline_encoder = nn.GRU(embedding_dim, hidden_dim)
         self.paragraph_encoder = nn.GRU(embedding_dim, hidden_dim)
 
-        bidirectional = True
-        self.body_encoder = nn.GRU(hidden_dim, hidden_dim, bidirectional=bidirectional)
-        self.bilinear = nn.Bilinear(hidden_dim, hidden_dim * (2 if bidirectional else 1), 1)
+        self.body_encoder = nn.GRU(hidden_dim, hidden_dim, bidirectional=True)
+        self.attention = ParaHeadlineAttention(2 * hidden_dim, hidden_dim, hidden_dim)
+        self.bilinear = nn.Bilinear(hidden_dim, 2 * hidden_dim, 1)
 
-    def forward(self, inputs):
+    # def forward(self, inputs):
+    def forward(self, headlines, headline_lengths, bodys, para_lengths):
+        # headline: [N, L_headline], 
+        # headline_lengths: [N],
+        # bodys: [N, P, L_para], 
+        # para_lengths: [N, P]
+        #
         # Note
         #  - GRU inputs: input [seq_len, batch, input_size], h_0 [num_layers * num_directions, batch, hidden_size]
         #  - GRU outputs: output [seq_len, batch, num_directions * hidden_size], h_n [num_layers * num_directions, batch, hidden_size]
 
-        idx_headline, idx_body = inputs  # [N=64, L_headline=25] [N * L_para=50, L_sent=200]
-        batch_size = len(idx_headline)
-        x_headline = self.word_embeds(idx_headline.t())  # [L_headline, N, H_embed]
-        x_body = self.word_embeds(idx_body.t())  # [L_sent, N * L_para, H_embed]
+        batch_size = len(headlines)  # N
+        x_headline = self.word_embeds(headlines)  # [N, L_headline, H_embed]
+        x_body = self.word_embeds(bodys)  # [N, P, L_para, H_embed]
 
-        _, h_headline = self.headline_encoder(x_headline)  # _, [1, N, H_enc]
+        _, h_headline = self.headline_encoder(pack_padded_sequence(x_headline, headline_lengths, batch_first=True, enforce_sorted=False))  # _, [1, N, H_enc]
         h_headline = h_headline.squeeze()  # [N, H_enc]
 
-        h_paras = []
-        for x_sent in x_body.split(batch_size, dim=1):  # [L_sent, N, H_embed]
-            _, h_para= self.paragraph_encoder(x_sent)  # _, [1, N, H_enc]
-            h_paras.append(h_para.squeeze())
-        h_paras = torch.stack(h_paras, dim=0)  # [L_para, N, H_enc]
+        valid_para_lengths = (para_lengths != 0).sum(dim=1).tolist()
+        para_mask = (para_lengths == 0)
+        # merge dimensions N and P
+        para_lengths = para_lengths.flatten()
+        para_lengths_masked = para_lengths[para_lengths != 0]
+        x_paras_masked = x_body.flatten(0,1)[para_lengths != 0]
 
-        _, h_body = self.body_encoder(h_paras)  # _, [2, N, H_enc]
-        h_body = h_body.transpose(0, 1).reshape([batch_size, -1])  # [N, 2 * H_enc]
+        _, h_paras_masked = self.paragraph_encoder(pack_padded_sequence(x_paras_masked, para_lengths_masked, batch_first=True, enforce_sorted=False))
 
-        return self.bilinear(h_headline, h_body)
+        # unmerge dimensions N and P
+        h_paras_grouped = h_paras_masked.squeeze().split(valid_para_lengths)
+        h_paras = pad_sequence(h_paras_grouped)
+
+        output_body_packed, _ = self.body_encoder(pack_padded_sequence(h_paras, valid_para_lengths, enforce_sorted=False))
+        output_body, _ = pad_packed_sequence(output_body_packed, batch_first=True, total_length=para_mask.shape[-1])  # [N, P, 2 * H]
+
+        h_body = self.attention(output_body, para_mask, h_headline)
+
+        return self.bilinear(h_headline, h_body).squeeze()
