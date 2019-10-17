@@ -77,8 +77,8 @@ def evaluate(model, data):
 
 
 def train(model, train_data, val_data):
-    num_epoch = 10
-    num_iterations = 100000
+    min_iterations = 2000
+    max_iterations = 100000
     batch_size = 64
 
     optimizer = torch.optim.Adam(model.parameters())
@@ -114,6 +114,7 @@ def train(model, train_data, val_data):
             global_step += 1
 
             if global_step % val_eval_freq == 0:
+                # Evaluate on validation set
                 val_loss, val_acc, val_auc = evaluate(model, val_data)
                 end_time = time.time()
                 minutes_elapsed = int((end_time - initial_time)/60)
@@ -121,12 +122,16 @@ def train(model, train_data, val_data):
                     global_step, minutes_elapsed, val_loss, val_acc, val_auc
                 ))
                 model.train()
-                es.record_loss(val_loss, model)
+
+                # Check early stopping
+                if global_step >= min_iterations:
+                    es.record_loss(val_loss, model)
+
                 if es.should_stop():
                     print(f"Early stopping at STEP: {global_step}...")
                     return
 
-            if global_step == num_iterations:
+            if global_step == max_iterations:
                 print(f"Stopping after reaching max iterations({global_step})...")
                 return
         epoch_no += 1
