@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 import data
 from model import AttnHrDualEncoderModel
+import utils
 
 DATA_DIR = Path(os.environ.get('DATA_DIR'))
 PROCESSED_DATA_DIR =  DATA_DIR / 'nela-17/whole/processed'
@@ -77,6 +78,7 @@ def train(model, train_data, val_data):
     val_eval_freq = int(0.1 * num_iterations_per_epoch)
     print(f"Val set evaluated every {val_eval_freq:,} steps (approx. 0.1 epoch)")
 
+    es = utils.EarlyStopping(10)
     initial_time = time.time()
 
     train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -104,8 +106,13 @@ def train(model, train_data, val_data):
                 end_time = time.time()
                 print(f"STEP: {global_step:7} | TIME: {int((end_time - initial_time)/60):4}min | VAL LOSS: {val_loss:.4f} | VAL ACC: {val_acc:.4f}")
                 model.train()
-            
+                es.record_loss(val_loss, model)
+                if es.should_stop():
+                    print(f"Early stopping at STEP: {global_step}...")
+                    return
+
             if global_step == num_iterations:
+                print(f"Stopping after reaching max iterations({global_step})...")
                 return
         epoch_no += 1
 
