@@ -1,11 +1,78 @@
 # -*- coding: utf-8 -*-
 from typing import List
-
+from pathlib import Path
+import pickle
 import numpy as np
 import random
 import torch
 from torch.utils.data import TensorDataset
 import torch.nn.functional as F
+from tqdm import trange, tqdm
+
+
+def load_dataset(data_path, dataset_type, max_headline_len, max_para_len, max_num_para, cache=False):
+    if cache:
+        cache_file_name = "{}_{}_Lh{}_Lp{}_P{}.pt".format(
+            data_path.stem, dataset_type, max_headline_len, max_para_len, max_num_para)
+        cache_path = Path("/tmp") / cache_file_name
+        if cache_path.exists():
+            print("Cached dataset found!")
+            return torch.load(cache_path)
+        else:
+            print("Cached dataset not found. Dataset will be cached after loading")
+
+    assert dataset_type in ['train', 'dev', 'test', 'debug']
+
+    numpy_data = {}
+    numpy_data['c'] = np.load(data_path / "whole/{}/{}_title.npy".format(dataset_type, dataset_type))
+    numpy_data['r'] = np.load(data_path / "whole/{}/{}_body.npy".format(dataset_type , dataset_type))
+    numpy_data['y'] = np.load(data_path / "whole/{}/{}_label.npy".format(dataset_type , dataset_type))
+    with open(data_path / "whole/dic_mincutN.pkl", "rb") as f:
+        voca = pickle.load(f, encoding='latin1')
+        eop_voca = voca['<EOP>']
+    
+    processed_data = _process_numpy_data(numpy_data, eop_voca)
+
+    dataset = _create_tensor_dataset(processed_data, max_headline_len, max_para_len, max_num_para)
+
+    if cache:
+        print("Caching dataset...")
+        torch.save(dataset, cache_path)
+        print(f"Caching done! Located at {cache_path}")
+    return dataset
+
+
+def load_glove(data_path):
+    return torch.tensor(np.load(open(data_path / "whole/W_embedding.npy", 'rb')))
+
+
+def _process_numpy_data(input_data, eop_voca):
+    """
+    Basically same functionality as
+      ``src_whole.AHDE_process_data.ProcessData.create_data_set``
+    from david-yoon/detecting-incongruity
+    """
+    output_set = []
+    
+    data_len = len(input_data['c'])
+    for index in trange(data_len, desc='STEP #1/2: Split body by paragraph'):
+        delimiter = ' ' +  str(eop_voca) + ' '
+        # last == padding
+        turn =[x.strip() for x in (' '.join(str(e) for e in input_data['r'][index])).split(delimiter)[:-1] ]
+        turn = [ x for x in turn if len(x) >1]
+        
+        tmp_ids = [x.split(' ') for x in turn]
+        target_ids = []
+        for sent in tmp_ids:
+            target_ids.append( [ int(x) for x in sent]  )
+
+        source_ids = input_data['c'][index]
+        
+        label = float(input_data['y'][index])
+        
+        output_set.append( [source_ids, target_ids, label] )
+    
+    return output_set
 
 
 def create_padded_tensor(input_tensor, seq_length, dtype, value=0):
@@ -14,7 +81,7 @@ def create_padded_tensor(input_tensor, seq_length, dtype, value=0):
     return F.pad(output, (0, pad_len), value=value)
 
 
-def load_dataset(data, max_headline_len, max_para_len, max_num_para):
+def _create_tensor_dataset(data, max_headline_len, max_para_len, max_num_para):
     samples = []
     headline_tensors = []
     headline_lengths = []
@@ -22,7 +89,7 @@ def load_dataset(data, max_headline_len, max_para_len, max_num_para):
     para_length_tensors = []
     labels = []
     count_no_body = 0
-    for d in data:
+    for d in tqdm(data, desc="STEP #2/2: Pad and convert to tensor"):
         # headline
         headline_tensor = create_padded_tensor(d[0], max_headline_len, dtype=torch.long)
         headline_tensors.append(headline_tensor)

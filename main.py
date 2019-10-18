@@ -15,9 +15,7 @@ import data
 from model import AttnHrDualEncoderModel
 import utils
 
-DATA_DIR = Path(os.environ.get('DATA_DIR'))
-PROCESSED_DATA_DIR =  DATA_DIR / 'nela-17/whole/processed'
-PROCESSED_GLOVE_PATH = DATA_DIR / 'nela-17/whole/W_embedding.npy'
+DATASET_DIR = Path(os.environ.get('DATA_DIR')) / 'nela-18'
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -142,24 +140,21 @@ def main():
     print(f"Using device: {device}")
 
     # Load data
-    print("Loading processed data...")
     max_headline_len = 25
     max_para_len = 200
     max_num_para = 50
 
-    with open(PROCESSED_DATA_DIR / 'train_set.pkl', 'rb') as f:
-        train_data = pickle.load(f, encoding='latin1')
-        print(f"Train set size: {len(train_data):9,}")
-        train_dataset = data.load_dataset(train_data, max_headline_len, max_para_len, max_num_para)
-    with open(PROCESSED_DATA_DIR / 'valid_set.pkl', 'rb') as f:
-        val_data = pickle.load(f, encoding='latin1')
-        print(f"Valid set size: {len(val_data):9,}")
-        val_dataset = data.load_dataset(val_data, max_headline_len, max_para_len, max_num_para)
-    print("Loading done!")
+    print("Loading train dataset...")
+    train_dataset = data.load_dataset(DATASET_DIR, 'train', max_headline_len, max_para_len, max_num_para, cache=True)
+    print(f"Train dataset size: {len(train_dataset):9,}")
+    print("Loading val dataset...")
+    val_dataset = data.load_dataset(DATASET_DIR, 'dev', max_headline_len, max_para_len, max_num_para, cache=True)
+    print(f"Val dataset size: {len(val_dataset):9,}")
+
+    glove_embeds = data.load_glove(DATASET_DIR)
 
     # Initialize model
     hidden_dim = 300
-    glove_embeds = torch.tensor(np.load(open(PROCESSED_GLOVE_PATH, 'rb')))
     vocab_size, embedding_dim = glove_embeds.shape
 
     print("Initializing model...")
@@ -173,12 +168,9 @@ def main():
     # Evaluate test
     evaluate_test_after_train = True
     if evaluate_test_after_train:
-        print("Loading test set...")
-        with open(PROCESSED_DATA_DIR / 'test_set.pkl', 'rb') as f:
-            test_data = pickle.load(f, encoding='latin1')
-            print(f"Test set size: {len(test_data):9,}")
-            test_dataset = data.load_dataset(test_data, max_headline_len, max_para_len, max_num_para)
-        print("Loading done!")
+        print("Loading test dataset...")
+        test_dataset = data.load_dataset(DATASET_DIR, 'test', max_headline_len, max_para_len, max_num_para, cache=True)
+        print(f"Test dataset size: {len(test_dataset):9,}")
 
         if utils.CHECKPOINT_SAVE_PATH.exists():
             print(f"Loading model checkpoint with min val loss...")
