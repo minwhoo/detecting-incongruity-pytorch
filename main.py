@@ -16,8 +16,6 @@ import data
 from model import AttnHrDualEncoderModel
 import utils
 
-DATASET_DIR = Path(os.environ.get('DATA_DIR')) / 'nela-18'
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
