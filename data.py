@@ -12,11 +12,11 @@ import torch.nn.functional as F
 from tqdm import trange, tqdm
 
 
-def load_dataset(data_path, dataset_type, max_headline_len, max_para_len, max_num_para, cache=False):
+def load_dataset(data_path, dataset_type, max_headline_len, max_para_len, max_num_para, cache, cache_dir):
     if cache:
         cache_file_name = "{}_{}_Lh{}_Lp{}_P{}.pt".format(
             data_path.stem, dataset_type, max_headline_len, max_para_len, max_num_para)
-        cache_path = Path("/tmp") / cache_file_name
+        cache_path = cache_dir / cache_file_name
         if cache_path.exists():
             print("Cached dataset found!")
             return torch.load(cache_path)
@@ -114,11 +114,16 @@ def _create_tensor_dataset(data, max_headline_len, max_para_len, max_num_para):
         body_tensor = torch.stack(para_tensors, dim=0)
         body_tensors.append(body_tensor)
 
-        para_length_tensor = create_padded_tensor([len(p[:max_para_len]) for p in paragraphs], max_num_para, dtype=torch.int)
+        para_length_tensor = create_padded_tensor([len(p[:max_para_len]) for p in paragraphs], 
+                                                  max_num_para, dtype=torch.int)
         para_length_tensors.append(para_length_tensor)
 
         # label
         labels.append(int(d[2]))
     print(count_no_body)
 
-    return TensorDataset(torch.stack(headline_tensors), torch.tensor(headline_lengths, dtype=torch.int), torch.stack(body_tensors), torch.stack(para_length_tensors), torch.tensor(labels, dtype=torch.float))
+    return TensorDataset(torch.stack(headline_tensors), 
+                         torch.tensor(headline_lengths, dtype=torch.int), 
+                         torch.stack(body_tensors), 
+                         torch.stack(para_length_tensors), 
+                         torch.tensor(labels, dtype=torch.float))

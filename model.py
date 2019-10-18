@@ -24,7 +24,7 @@ class ParaHeadlineAttention(nn.Module):
 
 
 class AttnHrDualEncoderModel(nn.Module):
-    def __init__(self, hidden_dim, vocab_size, embedding_dim, pretrained_embeds=None):
+    def __init__(self, hidden_dims, vocab_size, embedding_dim, pretrained_embeds=None):
         super().__init__()
 
         if pretrained_embeds is not None:
@@ -32,12 +32,13 @@ class AttnHrDualEncoderModel(nn.Module):
         else:
             self.word_embeds = nn.Embedding(vocab_size, embedding_dim)
 
-        self.headline_encoder = nn.GRU(embedding_dim, hidden_dim)
-        self.paragraph_encoder = nn.GRU(embedding_dim, hidden_dim)
+        self.headline_encoder = nn.GRU(embedding_dim, hidden_dims['headline'])
+        self.paragraph_encoder = nn.GRU(embedding_dim, hidden_dims['word'])
 
-        self.body_encoder = nn.GRU(hidden_dim, hidden_dim, bidirectional=True)
-        self.attention = ParaHeadlineAttention(2 * hidden_dim, hidden_dim, hidden_dim)
-        self.bilinear = nn.Bilinear(hidden_dim, 2 * hidden_dim, 1)
+        self.body_encoder = nn.GRU(hidden_dims['word'], hidden_dims['paragraph'], bidirectional=True)
+        self.attention = ParaHeadlineAttention(2 * hidden_dims['paragraph'], hidden_dims['headline'], 
+                                               2 * hidden_dims['paragraph'])
+        self.bilinear = nn.Bilinear(hidden_dims['headline'], 2 * hidden_dims['paragraph'], 1)
 
     # def forward(self, inputs):
     def forward(self, headlines, headline_lengths, bodys, para_lengths):
@@ -54,7 +55,8 @@ class AttnHrDualEncoderModel(nn.Module):
         x_headline = self.word_embeds(headlines)  # [N, L_headline, H_embed]
         x_body = self.word_embeds(bodys)  # [N, P, L_para, H_embed]
 
-        _, h_headline = self.headline_encoder(pack_padded_sequence(x_headline, headline_lengths, batch_first=True, enforce_sorted=False))  # _, [1, N, H_enc]
+        _, h_headline = self.headline_encoder(pack_padded_sequence(x_headline, headline_lengths, 
+                                                                   batch_first=True, enforce_sorted=False))  # _, [1, N, H_enc]
         h_headline = h_headline.squeeze()  # [N, H_enc]
 
         valid_para_lengths = (para_lengths != 0).sum(dim=1).tolist()
@@ -64,14 +66,16 @@ class AttnHrDualEncoderModel(nn.Module):
         para_lengths_masked = para_lengths[para_lengths != 0]
         x_paras_masked = x_body.flatten(0,1)[para_lengths != 0]
 
-        _, h_paras_masked = self.paragraph_encoder(pack_padded_sequence(x_paras_masked, para_lengths_masked, batch_first=True, enforce_sorted=False))
+        _, h_paras_masked = self.paragraph_encoder(pack_padded_sequence(x_paras_masked, para_lengths_masked, 
+                                                                        batch_first=True, enforce_sorted=False))
 
         # unmerge dimensions N and P
         h_paras_grouped = h_paras_masked.squeeze().split(valid_para_lengths)
         h_paras = pad_sequence(h_paras_grouped)
 
         output_body_packed, _ = self.body_encoder(pack_padded_sequence(h_paras, valid_para_lengths, enforce_sorted=False))
-        output_body, _ = pad_packed_sequence(output_body_packed, batch_first=True, total_length=para_mask.shape[-1])  # [N, P, 2 * H]
+        output_body, _ = pad_packed_sequence(output_body_packed, 
+                                             batch_first=True, total_length=para_mask.shape[-1])  # [N, P, 2 * H]
 
         h_body = self.attention(output_body, para_mask, h_headline)
 

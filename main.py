@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import argparse
 import os
 from pathlib import Path
 import pickle
@@ -21,9 +22,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def evaluate(model, data):
-    with torch.no_grad():
-        model.eval()
+    model.eval()
 
+    with torch.no_grad():
         criterion = nn.BCEWithLogitsLoss()
 
         batch_size = 64
@@ -56,24 +57,20 @@ def evaluate(model, data):
         return loss, acc, auc
 
 
-def train(model, train_data, val_data):
-    min_iterations = 2000
-    max_iterations = 100000
-    batch_size = 64
-
-    optimizer = torch.optim.Adam(model.parameters())
-    criterion = nn.BCEWithLogitsLoss()
-
+def train(model, train_data, val_data, args):
     model.train()
 
-    num_iterations_per_epoch = len(train_data) / batch_size
-    val_eval_freq = int(0.1 * num_iterations_per_epoch)
-    print(f"Val set evaluated every {val_eval_freq:,} steps (approx. 0.1 epoch)")
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    criterion = nn.BCEWithLogitsLoss()
 
-    es = utils.EarlyStopping(10)
+    num_iterations_per_epoch = len(train_data) / args.batch_size
+    val_eval_freq = int(args.val_evaluation_freq * num_iterations_per_epoch)
+    print(f"Val set evaluated every {val_eval_freq:,} steps (approx. {args.val_evaluation_freq} epoch)")
+
+    es = utils.EarlyStopping(args.early_stopping_patience)
     initial_time = time.time()
 
-    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    train_dataloader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
 
     global_step = 0
     epoch_no = 0
@@ -97,22 +94,23 @@ def train(model, train_data, val_data):
             if global_step % val_eval_freq == 0:
                 # Evaluate on validation set
                 val_loss, val_acc, val_auc = evaluate(model, val_data)
+                model.train()
+
                 end_time = time.time()
                 minutes_elapsed = int((end_time - initial_time)/60)
                 print("STEP: {:7} | TIME: {:4}min | VAL LOSS: {:.4f} | VAL ACC: {:.4f} | VAL AUROC: {:.4f}".format(
                     global_step, minutes_elapsed, val_loss, val_acc, val_auc
                 ))
-                model.train()
 
                 # Check early stopping
-                if global_step >= min_iterations:
+                if global_step >= args.min_iterations:
                     es.record_loss(val_loss, model)
 
                 if es.should_stop():
                     print(f"Early stopping at STEP: {global_step}...")
                     return
 
-            if global_step == max_iterations:
+            if global_step == args.max_iterations:
                 print(f"Stopping after reaching max iterations({global_step})...")
                 return
         epoch_no += 1
@@ -121,37 +119,72 @@ def train(model, train_data, val_data):
 def main():
     print(f"Using device: {device}")
 
-    # Load data
-    max_headline_len = 25
-    max_para_len = 200
-    max_num_para = 50
+    parser = argparse.ArgumentParser()
 
+    # dataset-related params
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--max-headline-len", type=int)
+    parser.add_argument("--max-para-len", type=int)
+    parser.add_argument("--max-num-para", type=int)
+    parser.add_argument("--cache-dataset", action="store_true")
+    parser.add_argument("--cache-dir", type=Path, default=Path("/tmp"))
+
+    # model-related params
+    parser.add_argument("--headline-rnn-hidden-dim", type=int)
+    parser.add_argument("--word-level-rnn-hidden-dim", type=int)
+    parser.add_argument("--paragraph-level-rnn-hidden-dim", type=int)
+
+    # training-related params
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--min-iterations", type=int, default=2000)
+    parser.add_argument("--max-iterations", type=int, default=100000)
+    parser.add_argument("--val-evaluation-freq", type=float, default=0.1, 
+                        help="validation loss/acc evaluation frequency in terms of fraction of epoch")
+    parser.add_argument("--early-stopping-patience", type=int, default=10,
+                        help="number of times to wait for lower val loss before early stopping")
+    parser.add_argument("--evaluate-test-after-train", action="store_true",
+                        help="evaluate on test set after training")
+
+    args = parser.parse_args()
+
+    # Load data
     print("Loading train dataset...")
-    train_dataset = data.load_dataset(DATASET_DIR, 'train', max_headline_len, max_para_len, max_num_para, cache=True)
+    train_dataset = data.load_dataset(args.data_dir, 'train', args.max_headline_len, 
+                                      args.max_para_len, args.max_num_para, args.cache_dataset, 
+                                      args.cache_dir)
     print(f"Train dataset size: {len(train_dataset):9,}")
     print("Loading val dataset...")
-    val_dataset = data.load_dataset(DATASET_DIR, 'dev', max_headline_len, max_para_len, max_num_para, cache=True)
+    val_dataset = data.load_dataset(args.data_dir, 'dev', args.max_headline_len, 
+                                    args.max_para_len, args.max_num_para, args.cache_dataset, 
+                                    args.cache_dir)
     print(f"Val dataset size: {len(val_dataset):9,}")
 
-    glove_embeds = data.load_glove(DATASET_DIR)
+    glove_embeds = data.load_glove(args.data_dir)
 
     # Initialize model
-    hidden_dim = 300
     vocab_size, embedding_dim = glove_embeds.shape
 
     print("Initializing model...")
-    model = AttnHrDualEncoderModel(hidden_dim, vocab_size, embedding_dim, pretrained_embeds=glove_embeds)
+    hidden_dims = {
+        'headline': args.headline_rnn_hidden_dim,
+        'word': args.word_level_rnn_hidden_dim,
+        'paragraph': args.word_level_rnn_hidden_dim
+    }
+    model = AttnHrDualEncoderModel(hidden_dims, vocab_size, embedding_dim, 
+                                   pretrained_embeds=glove_embeds)
     model.to(device)
     print("Initialization done!")
 
     # Train
-    train(model, train_dataset, val_dataset)
+    train(model, train_dataset, val_dataset, args)
 
     # Evaluate test
-    evaluate_test_after_train = True
-    if evaluate_test_after_train:
+    if args.evaluate_test_after_train:
         print("Loading test dataset...")
-        test_dataset = data.load_dataset(DATASET_DIR, 'test', max_headline_len, max_para_len, max_num_para, cache=True)
+        test_dataset = data.load_dataset(args.data_dir, 'test', args.max_headline_len, 
+                                         args.max_para_len, args.max_num_para, args.cache_dataset, 
+                                         args.cache_dir)
         print(f"Test dataset size: {len(test_dataset):9,}")
 
         if utils.CHECKPOINT_SAVE_PATH.exists():
@@ -164,7 +197,7 @@ def main():
         print(f"TEST ACC: {test_acc:.4f} | TEST AUROC: {test_auc:.4f}")
 
         if utils.CHECKPOINT_SAVE_PATH.exists():
-            utils.CHECKPOINT_SAVE_PATH.unlink()  # delete model
+            utils.CHECKPOINT_SAVE_PATH.unlink()  # delete model checkpoint
 
 
 if __name__ == "__main__":
