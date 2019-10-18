@@ -20,24 +20,6 @@ DATASET_DIR = Path(os.environ.get('DATA_DIR')) / 'nela-18'
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def iter_batch(dataset, batch_size, is_test=False):
-    encoder_size = 200
-    context_size = 50
-    encoderR_size = 25
-    for i in range(0, len(dataset), batch_size):
-        # Call batch generator
-        batch = data.get_batch(dataset, batch_size, encoder_size, context_size, encoderR_size, start_index=i, is_test=is_test)
-        raw_encoder_inputs, raw_encoderR_inputs, raw_encoder_seq, raw_context_seq, raw_encoderR_seq, raw_target_label = batch
-
-        # Convert data to torch tensors
-        input_headline = torch.tensor(raw_encoderR_inputs)
-        input_body = torch.tensor(raw_encoder_inputs)
-        labels = torch.tensor(raw_target_label, dtype=torch.float32)
-
-        # Yield data
-        yield (input_headline, input_body), labels
-
-
 def evaluate(model, data):
     with torch.no_grad():
         model.eval()
