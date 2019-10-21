@@ -29,19 +29,6 @@ python main.py --data-dir <PATH_TO_NELA_2017_DATA> \
                --evaluate-test-after-train
 
 ```
-### NELA 2018
-```
-python main.py --data-dir <PATH_TO_NELA_2018_DATA> \
-               --max-headline-len 70 \
-               --max-para-len 180 \
-               --max-num-para 25 \
-               --headline-rnn-hidden-dim 200 \
-               --word-level-rnn-hidden-dim 200 \
-               --paragraph-level-rnn-hidden-dim 200 \
-               --lr 0.001 \
-               --batch-size 40 \
-               --evaluate-test-after-train
-```
 
 ## References
 [1] https://github.com/david-yoon/detecting-incongruity
