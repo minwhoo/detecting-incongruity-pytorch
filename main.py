@@ -120,17 +120,17 @@ def main():
     parser = argparse.ArgumentParser()
 
     # dataset-related params
-    parser.add_argument("--data-dir", type=Path)
-    parser.add_argument("--max-headline-len", type=int)
-    parser.add_argument("--max-para-len", type=int)
-    parser.add_argument("--max-num-para", type=int)
+    parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument("--max-headline-len", type=int, required=True)
+    parser.add_argument("--max-para-len", type=int, required=True)
+    parser.add_argument("--max-num-para", type=int, required=True)
     parser.add_argument("--cache-dataset", action="store_true")
     parser.add_argument("--cache-dir", type=Path, default=Path("/tmp"))
 
     # model-related params
-    parser.add_argument("--headline-rnn-hidden-dim", type=int)
-    parser.add_argument("--word-level-rnn-hidden-dim", type=int)
-    parser.add_argument("--paragraph-level-rnn-hidden-dim", type=int)
+    parser.add_argument("--headline-rnn-hidden-dim", type=int, required=True)
+    parser.add_argument("--word-level-rnn-hidden-dim", type=int, required=True)
+    parser.add_argument("--paragraph-level-rnn-hidden-dim", type=int, required=True)
 
     # training-related params
     parser.add_argument("--lr", type=float, default=0.001)
