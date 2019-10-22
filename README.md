@@ -18,9 +18,9 @@ Follow instructions from the original Tensorflow repo [1].
 ### NELA 2017
 ```
 python main.py --data-dir <PATH_TO_NELA_2017_DATA> \
-               --max-headline-len 50 \
+               --max-headline-len 25 \
                --max-para-len 200 \
-               --max-num-para 25 \
+               --max-num-para 50 \
                --headline-rnn-hidden-dim 200 \
                --word-level-rnn-hidden-dim 200 \
                --paragraph-level-rnn-hidden-dim 100 \
