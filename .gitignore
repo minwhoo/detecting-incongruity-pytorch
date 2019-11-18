@@ -1,3 +1,10 @@
+# Data
+data
+
+# TEST
+*TEST*
+
+
 .venv/
 .vscode/
 __pycache__/
