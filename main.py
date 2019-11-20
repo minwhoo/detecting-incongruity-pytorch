@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import pickle
 import time
+import datetime
 
 import numpy as np
 import torch
@@ -196,6 +197,14 @@ def main():
 
         if utils.CHECKPOINT_SAVE_PATH.exists():
             utils.CHECKPOINT_SAVE_PATH.unlink()  # delete model checkpoint
+            
+        # result logging
+        with open('./TEST_run_result.txt', 'a') as f:
+            f.write(
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + '\t' + \
+                    str('t_accr:\t') + str(test_acc) + '\t' + \
+                    str('t_auroc:\t') + str(test_auc) + '\t' + \
+                    '\n')
 
 
 if __name__ == "__main__":
